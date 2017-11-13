@@ -9,8 +9,8 @@ import java.util.ArrayList;
 public class PRPreProcess {
     public static class PreProcessMapper
             extends Mapper<Object, Text, LongWritable, LongWritable> {
-        LongWritable fromNodeId;
-        LongWritable toNodeId;
+        LongWritable fromNodeId = new LongWritable();
+        LongWritable toNodeId = new LongWritable();
 
 
         public void map(Object key, Text value, Context context) throws IOException, InterruptedException {
@@ -39,5 +39,4 @@ public class PRPreProcess {
 
         }
     }
-
 }

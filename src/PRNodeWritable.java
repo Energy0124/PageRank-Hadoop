@@ -63,6 +63,21 @@ public class PRNodeWritable implements Writable {
         }
     }
 
+
+    public String toPrettyString() {
+        return "PRNodeWritable{" +
+                "type=" + type +
+                ", nodeID=" + nodeID +
+                ", pageRank=" + pageRank +
+                ", adjacenyList=" + adjacenyList +
+                '}';
+    }
+
+    @Override
+    public String toString() {
+        return Double.toString(pageRank);
+    }
+
     public Type getType() {
         return type;
     }
