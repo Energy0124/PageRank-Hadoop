@@ -12,6 +12,13 @@ public class PRNodeWritable implements Writable {
     private double pageRank;
     private ArrayList<Long> adjacenyList;
 
+    public PRNodeWritable(Type type, long nodeID, double pageRank, ArrayList<Long> adjacenyList) {
+        this.type = type;
+        this.nodeID = nodeID;
+        this.pageRank = pageRank;
+        this.adjacenyList = adjacenyList;
+    }
+
     @Override
     public void write(DataOutput dataOutput) throws IOException {
         dataOutput.writeByte(type.val);
