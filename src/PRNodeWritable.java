@@ -7,10 +7,14 @@ import java.util.ArrayList;
 
 public class PRNodeWritable implements Writable {
     private static final Type[] mapping = new Type[]{Type.Complete, Type.Mass, Type.Structure};
-    private Type type;
-    private long nodeID;
-    private double pageRank;
-    private ArrayList<Long> adjacenyList;
+    private Type type = Type.Complete;
+    private long nodeID = 0;
+    private double pageRank = 0.25;
+    private ArrayList<Long> adjacenyList =new ArrayList<>();
+
+    public PRNodeWritable(Type type) {
+        this.type = type;
+    }
 
     public PRNodeWritable(Type type, long nodeID, double pageRank, ArrayList<Long> adjacenyList) {
         this.type = type;
