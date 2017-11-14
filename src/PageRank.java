@@ -99,6 +99,7 @@ public class PageRank {
                 lastRun = true;
             }
             Configuration pageRankAdjustConf = new Configuration();
+            pageRankAdjustConf.set(TextOutputFormat.SEPERATOR, " ");
             pageRankAdjustConf.setLong("totalNodeCount", totalNodeCount);
             pageRankAdjustConf.setDouble("missingMass", missingMass);
             pageRankAdjustConf.setDouble("randomJumpFactor", randomJumpFactor);
