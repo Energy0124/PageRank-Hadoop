@@ -10,7 +10,11 @@ public class PRNodeWritable implements Writable {
     private Type type = Type.Complete;
     private long nodeID = 0;
     private double pageRank = -1;
-    private ArrayList<Long> adjacenyList =new ArrayList<>();
+    private ArrayList<Long> adjacenyList = new ArrayList<>();
+
+    public PRNodeWritable() {
+
+    }
 
     public PRNodeWritable(Type type) {
         this.type = type;

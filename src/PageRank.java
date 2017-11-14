@@ -9,6 +9,7 @@ import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.log4j.Logger;
 
 import java.io.IOException;
@@ -56,6 +57,9 @@ public class PageRank {
         Path pageRankOutputPath = new Path("pageRankOutput-" + UUID.randomUUID());
 
         int iteration = Integer.parseInt(args[2]);
+        double randomJumpFactor = Double.parseDouble(args[3]);
+        double threshold = Double.parseDouble(args[4]);
+
         //pagerank job
         for (int i = 0; i < iteration; i++) {
             Configuration pageRankConf = new Configuration();
@@ -90,9 +94,16 @@ public class PageRank {
 
 
             //run pagerank adjust
+            boolean lastRun = false;
+            if (i == iteration - 1) {
+                lastRun = true;
+            }
             Configuration pageRankAdjustConf = new Configuration();
             pageRankAdjustConf.setLong("totalNodeCount", totalNodeCount);
             pageRankAdjustConf.setDouble("missingMass", missingMass);
+            pageRankAdjustConf.setDouble("randomJumpFactor", randomJumpFactor);
+            pageRankAdjustConf.setDouble("threshold", threshold);
+            pageRankAdjustConf.setBoolean("lastRun", lastRun);
             Job pageRankAdjustJob = Job.getInstance(pageRankAdjustConf, "pagerank-adjust");
             pageRankAdjustJob.setJarByClass(PageRank.class);
             pageRankAdjustJob.setMapperClass(PRAdjust.PageRankAdjustMapper.class);
@@ -107,10 +118,20 @@ public class PageRank {
             pageRankAdjustJob.setOutputValueClass(PRNodeWritable.class);
 
             pageRankAdjustJob.setInputFormatClass(SequenceFileInputFormat.class);
-            pageRankAdjustJob.setOutputFormatClass(SequenceFileOutputFormat.class);
+            if (lastRun) {
+                pageRankAdjustJob.setOutputFormatClass(TextOutputFormat.class);
+            } else {
+                pageRankAdjustJob.setOutputFormatClass(SequenceFileOutputFormat.class);
+            }
 
             Path pageRankAdjustInputPath = pageRankOutputPath;
-            Path pageRankAdjustOutputPath = new Path("pageRankAdjustOutput-" + UUID.randomUUID());
+
+            Path pageRankAdjustOutputPath;
+            if (lastRun) {
+                pageRankAdjustOutputPath = new Path(args[1]);
+            } else {
+                pageRankAdjustOutputPath = new Path("pageRankAdjustOutput-" + UUID.randomUUID());
+            }
 
             FileInputFormat.addInputPath(pageRankAdjustJob, pageRankAdjustInputPath);
             FileOutputFormat.setOutputPath(pageRankAdjustJob, pageRankAdjustOutputPath);
@@ -152,7 +173,7 @@ public class PageRank {
 
             if (node.getPageRank() == -1) {
                 long totalNodeCount = context.getConfiguration().getLong("totalNodeCount", 0);
-                node.setPageRank(1 / totalNodeCount);
+                node.setPageRank(1.0D / totalNodeCount);
             }
 
             // Pass along node structure.
