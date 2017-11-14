@@ -41,7 +41,7 @@ public class PRPreProcess {
             }
 
             prNode.setNodeID(key.get());
-            prNode.setPageRank(0.25);
+            prNode.setPageRank(-1);
             prNode.setAdjacenyList(adjList);
 
             context.write(key, prNode);

@@ -9,143 +9,14 @@ import org.apache.hadoop.mapreduce.lib.input.SequenceFileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
+import org.apache.log4j.Logger;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.UUID;
-
-import org.apache.log4j.Logger;
 
 public class PageRank {
     private static final Logger LOG = Logger.getLogger(PageRank.class);
-
-    public enum Counter {
-        TOTAL_NODES,
-
-    }
-
-    private static class PageRankMapper extends
-            Mapper<LongWritable, PRNodeWritable, LongWritable, PRNodeWritable> {
-
-        // The neighbor to which we're sending messages.
-        private static final LongWritable neighborNodeId = new LongWritable();
-
-        // Contents of the messages: partial PageRank mass.
-        private static final PRNodeWritable intermediateMass = new PRNodeWritable(PRNodeWritable.Type.Mass);
-
-        // For passing along node structure.
-        private static final PRNodeWritable intermediateStructure = new PRNodeWritable(PRNodeWritable.Type.Structure);
-
-        @Override
-        public void map(LongWritable nodeId, PRNodeWritable node, Context context)
-                throws IOException, InterruptedException {
-            // Pass along node structure.
-            intermediateStructure.setNodeID(node.getNodeID());
-            intermediateStructure.setType(PRNodeWritable.Type.Structure);
-            intermediateStructure.setAdjacenyList(node.getAdjacenyList());
-
-            context.write(nodeId, intermediateStructure);
-
-            // Distribute PageRank mass to neighbors (along outgoing edges).
-            if (node.getAdjacenyList().size() > 0) {
-                // Each neighbor gets an equal share of PageRank mass.
-                ArrayList<Long> adjacenyList = node.getAdjacenyList();
-                double mass = node.getPageRank() / adjacenyList.size();
-
-                // Iterate over neighbors.
-                for (Long neighborId : adjacenyList) {
-                    neighborNodeId.set(neighborId);
-
-                    intermediateMass.setNodeID(neighborId);
-                    intermediateMass.setType(PRNodeWritable.Type.Mass);
-                    intermediateMass.setPageRank(mass);
-
-                    context.write(neighborNodeId, intermediateMass);
-                }
-            }
-        }
-    }
-
-    // Reduce: sums incoming PageRank contributions, rewrite graph structure.
-    private static class PageRankReducer extends
-            Reducer<LongWritable, PRNodeWritable, LongWritable, PRNodeWritable> {
-        // For keeping track of PageRank mass encountered, so we can compute missing PageRank mass lost
-        // through dangling nodes.
-        private float totalMass = Float.NEGATIVE_INFINITY;
-
-        @Override
-        public void reduce(LongWritable nid, Iterable<PRNodeWritable> iterable, Context context)
-                throws IOException, InterruptedException {
-            Iterator<PRNodeWritable> values = iterable.iterator();
-
-            // Create the node structure that we're going to assemble back together from shuffled pieces.
-            PRNodeWritable node = new PRNodeWritable(PRNodeWritable.Type.Complete);
-
-            node.setNodeID(nid.get());
-
-            int massMessagesReceived = 0;
-            int structureReceived = 0;
-            double pageRank = 0;
-            for (PRNodeWritable prNodeWritable : iterable) {
-
-                if (prNodeWritable.getType().equals(PRNodeWritable.Type.Structure)) {
-                    // This is the structure; update accordingly.
-                    ArrayList<Long> list = prNodeWritable.getAdjacenyList();
-                    structureReceived++;
-                    node.setAdjacenyList(list);
-                } else {
-                    // This is a message that contains PageRank mass; accumulate.
-                    pageRank += prNodeWritable.getPageRank();
-                    massMessagesReceived++;
-                }
-            }
-
-            //todo: continue here and think about how to handle missing mass
-
-            // Update the final accumulated PageRank mass.
-            node.setPageRank(pageRank);
-//            context.getCounter(PageRank.massMessagesReceived).increment(massMessagesReceived);
-
-            // Error checking.
-            if (structureReceived == 1) {
-                // Everything checks out, emit final node structure with updated PageRank value.
-                context.write(nid, node);
-
-                // Keep track of total PageRank mass.
-//                totalMass = sumLogProbs(totalMass, mass);
-            } else if (structureReceived == 0) {
-                // We get into this situation if there exists an edge pointing to a node which has no
-                // corresponding node structure (i.e., PageRank mass was passed to a non-existent node)...
-                // log and count but move on.
-//                context.getCounter(PageRank.missingStructure).increment(1);
-                LOG.warn("No structure received for nodeid: " + nid.get() + " mass: "
-                        + massMessagesReceived);
-                // It's important to note that we don't add the PageRank mass to total... if PageRank mass
-                // was sent to a non-existent node, it should simply vanish.
-            } else {
-                // This shouldn't happen!
-                throw new RuntimeException("Multiple structure received for nodeid: " + nid.get()
-                        + " mass: " + massMessagesReceived + " struct: " + structureReceived);
-            }
-        }
-
-//        @Override
-//        public void cleanup(Context context) throws IOException {
-//            Configuration conf = context.getConfiguration();
-//            String taskId = conf.get("mapred.task.id");
-//            String path = conf.get("PageRankMassPath");
-//
-//            Preconditions.checkNotNull(taskId);
-//            Preconditions.checkNotNull(path);
-//
-//            // Write to a file the amount of PageRank mass we've seen in this reducer.
-//            FileSystem fs = FileSystem.get(context.getConfiguration());
-//            FSDataOutputStream out = fs.create(new Path(path + "/" + taskId), false);
-//            out.writeFloat(totalMass);
-//            out.close();
-//        }
-    }
 
     public static void main(String[] args) throws Exception {
 
@@ -188,15 +59,16 @@ public class PageRank {
         //pagerank job
         for (int i = 0; i < iteration; i++) {
             Configuration pageRankConf = new Configuration();
+            pageRankConf.setLong("totalNodeCount", totalNodeCount);
             Job pageRankJob = Job.getInstance(pageRankConf, "pagerank");
             pageRankJob.setJarByClass(PageRank.class);
-            pageRankJob.setMapperClass(PRPreProcess.PreProcessMapper.class);
+            pageRankJob.setMapperClass(PageRankMapper.class);
             //implement combiner later
             //pageRankJob.setCombinerClass();
-            pageRankJob.setReducerClass(PRPreProcess.PreProcessReducer.class);
+            pageRankJob.setReducerClass(PageRankReducer.class);
 
             pageRankJob.setMapOutputKeyClass(LongWritable.class);
-            pageRankJob.setMapOutputValueClass(LongWritable.class);
+            pageRankJob.setMapOutputValueClass(PRNodeWritable.class);
 
             pageRankJob.setOutputKeyClass(LongWritable.class);
             pageRankJob.setOutputValueClass(PRNodeWritable.class);
@@ -209,22 +81,27 @@ public class PageRank {
             FileInputFormat.addInputPath(pageRankJob, pageRankInputPath);
             FileOutputFormat.setOutputPath(pageRankJob, pageRankOutputPath);
 
-            if (!preProcessJob.waitForCompletion(true)) {
+            if (!pageRankJob.waitForCompletion(true)) {
                 System.exit(1);
             }
+
+
+            double missingMass = Double.longBitsToDouble(pageRankJob.getCounters().findCounter(Counter.MISSING_MASS).getValue());
+
 
             //run pagerank adjust
             Configuration pageRankAdjustConf = new Configuration();
             pageRankAdjustConf.setLong("totalNodeCount", totalNodeCount);
+            pageRankAdjustConf.setDouble("missingMass", missingMass);
             Job pageRankAdjustJob = Job.getInstance(pageRankAdjustConf, "pagerank-adjust");
             pageRankAdjustJob.setJarByClass(PageRank.class);
-            pageRankAdjustJob.setMapperClass(PRPreProcess.PreProcessMapper.class);
+            pageRankAdjustJob.setMapperClass(PRAdjust.PageRankAdjustMapper.class);
             //implement combiner later
             //pageRankJob.setCombinerClass();
-            pageRankAdjustJob.setReducerClass(PRPreProcess.PreProcessReducer.class);
+            pageRankAdjustJob.setReducerClass(PRAdjust.PageRankAdjustReducer.class);
 
             pageRankAdjustJob.setMapOutputKeyClass(LongWritable.class);
-            pageRankAdjustJob.setMapOutputValueClass(LongWritable.class);
+            pageRankAdjustJob.setMapOutputValueClass(PRNodeWritable.class);
 
             pageRankAdjustJob.setOutputKeyClass(LongWritable.class);
             pageRankAdjustJob.setOutputValueClass(PRNodeWritable.class);
@@ -238,7 +115,7 @@ public class PageRank {
             FileInputFormat.addInputPath(pageRankAdjustJob, pageRankAdjustInputPath);
             FileOutputFormat.setOutputPath(pageRankAdjustJob, pageRankAdjustOutputPath);
 
-            if (!preProcessJob.waitForCompletion(true)) {
+            if (!pageRankAdjustJob.waitForCompletion(true)) {
                 System.exit(1);
             }
 
@@ -248,6 +125,119 @@ public class PageRank {
 
         System.exit(0);
 
+
+    }
+
+    public enum Counter {
+        TOTAL_NODES,
+        MISSING_MASS
+
+    }
+
+    public static class PageRankMapper extends
+            Mapper<LongWritable, PRNodeWritable, LongWritable, PRNodeWritable> {
+
+        // The neighbor to which we're sending messages.
+        private static final LongWritable neighborNodeId = new LongWritable();
+
+        // Contents of the messages: partial PageRank mass.
+        private static final PRNodeWritable intermediateMass = new PRNodeWritable(PRNodeWritable.Type.Mass);
+
+        // For passing along node structure.
+        private static final PRNodeWritable intermediateStructure = new PRNodeWritable(PRNodeWritable.Type.Structure);
+
+        @Override
+        public void map(LongWritable nodeId, PRNodeWritable node, Context context)
+                throws IOException, InterruptedException {
+
+            if (node.getPageRank() == -1) {
+                long totalNodeCount = context.getConfiguration().getLong("totalNodeCount", 0);
+                node.setPageRank(1 / totalNodeCount);
+            }
+
+            // Pass along node structure.
+            intermediateStructure.setNodeID(node.getNodeID());
+            intermediateStructure.setType(PRNodeWritable.Type.Structure);
+            intermediateStructure.setAdjacenyList(node.getAdjacenyList());
+
+            context.write(nodeId, intermediateStructure);
+
+            // Distribute PageRank mass to neighbors (along outgoing edges).
+            if (node.getAdjacenyList().size() > 0) {
+                // Each neighbor gets an equal share of PageRank mass.
+                ArrayList<Long> adjacenyList = node.getAdjacenyList();
+                double mass = node.getPageRank() / adjacenyList.size();
+
+                // Iterate over neighbors.
+                for (Long neighborId : adjacenyList) {
+                    neighborNodeId.set(neighborId);
+
+                    intermediateMass.setNodeID(neighborId);
+                    intermediateMass.setType(PRNodeWritable.Type.Mass);
+                    intermediateMass.setPageRank(mass);
+
+                    context.write(neighborNodeId, intermediateMass);
+                }
+            } else {
+                //missing mass
+                neighborNodeId.set(-1);
+
+                intermediateMass.setNodeID(-1);
+                intermediateMass.setType(PRNodeWritable.Type.Mass);
+                intermediateMass.setPageRank(node.getPageRank());
+
+                context.write(neighborNodeId, intermediateMass);
+
+            }
+        }
+    }
+
+    // Reduce: sums incoming PageRank contributions, rewrite graph structure.
+    public static class PageRankReducer extends
+            Reducer<LongWritable, PRNodeWritable, LongWritable, PRNodeWritable> {
+
+        private static final PRNodeWritable node = new PRNodeWritable(PRNodeWritable.Type.Complete);
+
+        @Override
+        public void reduce(LongWritable nodeId, Iterable<PRNodeWritable> prNodeWritables, Context context)
+                throws IOException, InterruptedException {
+
+            if (nodeId.get() == -1) {
+                //if missing mass
+                for (PRNodeWritable prNodeWritable : prNodeWritables) {
+
+                    long missingLong = context.getCounter(Counter.MISSING_MASS).getValue();
+                    double missingDouble = Double.longBitsToDouble(missingLong);
+                    missingDouble += prNodeWritable.getPageRank();
+                    missingLong = Double.doubleToLongBits(missingDouble);
+                    context.getCounter(Counter.MISSING_MASS).setValue(missingLong);
+
+                }
+                return;
+            }
+
+            // Create the node structure that we're going to assemble back together from shuffled pieces.
+
+            node.setNodeID(nodeId.get());
+
+            double pageRank = 0;
+            for (PRNodeWritable prNodeWritable : prNodeWritables) {
+
+                if (prNodeWritable.getType().equals(PRNodeWritable.Type.Structure)) {
+                    // This is the structure; update accordingly.
+                    ArrayList<Long> list = prNodeWritable.getAdjacenyList();
+                    node.setAdjacenyList(list);
+                } else {
+                    // This is a message that contains PageRank mass; accumulate.
+                    pageRank += prNodeWritable.getPageRank();
+                }
+            }
+
+            // Update the final accumulated PageRank mass.
+            node.setPageRank(pageRank);
+//            context.getCounter(PageRank.massMessagesReceived).increment(massMessagesReceived);
+            context.write(nodeId, node);
+        }
 
     }
 }
